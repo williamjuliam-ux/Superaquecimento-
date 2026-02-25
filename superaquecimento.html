@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Superaquecimento - Calculadora</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#111111">
+
+  <style>
+    body { font-family: system-ui, Arial; margin: 0; background:#f6f7fb; color:#111; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 16px; }
+    .card { background:#fff; border-radius: 14px; padding: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.06); margin-bottom: 12px; }
+    h1 { font-size: 18px; margin: 0 0 10px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    label { font-size: 12px; color:#444; display:block; margin-bottom: 6px; }
+    input, select, button {
+      width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #d9dbe6; font-size: 14px;
+      box-sizing: border-box; background:#fff;
+    }
+    button { cursor: pointer; border: none; background:#111; color:#fff; font-weight: 600; }
+    button.secondary { background:#e9ebf5; color:#111; border: 1px solid #d9dbe6; }
+    .row { display:flex; gap:10px; align-items: stretch; }
+    .row > * { flex: 1; }
+    .pill { display:inline-block; padding: 6px 10px; border-radius: 999px; font-size: 12px; background:#eef2ff; }
+    .muted { color:#666; font-size: 12px; }
+    table { width:100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 10px; border-bottom: 1px solid #eee; text-align:left; vertical-align: top; }
+    .good { background:#eafff1; }
+    .warn { background:#fff6e5; }
+    .bad  { background:#ffecec; }
+    .small { font-size: 12px; color:#555; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    /* Debug (tabelas) escondido por padrão */
+    .hidden { display:none; }
+    .debugPre { white-space:pre-wrap; background:#0b1020; color:#cfe1ff; padding:12px; border-radius:12px; overflow:auto; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Calculadora de Superaquecimento</h1>
+
+      <div class="grid">
+        <div>
+          <label>Marca (opcional)</label>
+          <input id="brand" placeholder="Ex: Samsung, LG, Electrolux..." />
+        </div>
+
+        <div>
+          <label>Tipo</label>
+          <select id="tipo">
+            <option value="conv">Convencional</option>
+            <option value="inv">Inverter</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Gas</label>
+          <select id="gas"></select>
+        </div>
+
+        <!-- PRESSAO COM UNIDADE -->
+        <div>
+          <label>Pressao de sucao</label>
+          <div style="display:flex; gap:6px;">
+            <input id="psi" type="number" step="0.1" placeholder="Ex: 135" style="flex:2;" />
+            <select id="unit" style="flex:1;">
+              <option value="psi">psi</option>
+              <option value="bar">bar</option>
+              <option value="kpa">kPa</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label>Temperatura da sucao (°C)</label>
+          <input id="tsuc" type="number" step="0.1" placeholder="Ex: 15" />
+        </div>
+
+        <div>
+          <label>Observacao (opcional)</label>
+          <input id="obs" placeholder="Ex: filtro sujo, ambiente 30°C..." />
+        </div>
+      </div>
+
+      <div style="height:10px"></div>
+
+      <div class="row">
+        <button id="calc">Calcular</button>
+        <button id="save" class="secondary">Salvar no historico</button>
+      </div>
+
+      <div style="height:12px"></div>
+
+      <div class="card" style="background:#fafbff; border:1px solid #e8eaff; box-shadow:none;">
+        <div class="row">
+          <div>
+            <div class="muted">Temperatura de saturacao (°C)</div>
+            <div id="tevap" class="mono" style="font-size:18px;">—</div>
+          </div>
+          <div>
+            <div class="muted">Superaquecimento (°C)</div>
+            <div id="sup" class="mono" style="font-size:18px;">—</div>
+          </div>
+          <div>
+            <div class="muted">Status</div>
+            <div id="status" class="pill">—</div>
+          </div>
+        </div>
+
+        <div style="height:8px"></div>
+        <div class="muted">Diagnostico provavel</div>
+        <div id="diag" class="small">—</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <h1 style="margin:0; flex:2;">Historico</h1>
+        <button id="clear" class="secondary" style="flex:1;">Limpar historico</button>
+      </div>
+      <div class="muted" style="margin:6px 0 10px;">Salvo no seu aparelho (localStorage).</div>
+      <div id="history"></div>
+    </div>
+
+    <!-- Debug / tabelas: escondido por padrão -->
+    <div class="card">
+      <div class="row">
+        <h1 style="margin:0; flex:2;">Tabelas PT (Debug)</h1>
+        <button id="toggleTables" class="secondary" style="flex:1;">Mostrar tabelas</button>
+      </div>
+
+      <div id="tablesBox" class="hidden">
+        <div class="small" style="margin:6px 0 10px;">
+          Formato <span class="mono">{ tC, psi }</span> (o app converte para <span class="mono">{ psi, tC }</span>).
+        </div>
+        <pre id="tablesView" class="mono debugPre"></pre>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // ==========================================================
+  // TABELAS PT (RAW) - formato {tC, psi}
+  // ==========================================================
+  const PT_RAW = {
+    "R410A": [
+      { tC: -20, psi: 43.21 }, { tC: -18, psi: 47.69 }, { tC: -16, psi: 52.44 }, { tC: -14, psi: 57.46 },
+      { tC: -12, psi: 62.76 }, { tC: -10, psi: 68.35 }, { tC: -8,  psi: 74.24 }, { tC: -6,  psi: 80.44 },
+      { tC: -4,  psi: 86.97 }, { tC: -2,  psi: 93.83 }, { tC: 0,   psi: 101.03 },{ tC: 2,   psi: 108.59 },
+      { tC: 4,   psi: 116.51 },{ tC: 6,   psi: 124.82 },{ tC: 8,   psi: 133.52 },{ tC: 10,  psi: 142.61 },
+      { tC: 12,  psi: 152.12 },{ tC: 14,  psi: 162.05 },{ tC: 16,  psi: 172.43 },{ tC: 18,  psi: 183.25 },
+      { tC: 20,  psi: 194.55 },{ tC: 22,  psi: 206.31 },{ tC: 24,  psi: 218.57 },{ tC: 26,  psi: 231.33 },
+      { tC: 28,  psi: 244.62 },{ tC: 30,  psi: 258.42 },{ tC: 32,  psi: 272.79 },{ tC: 34,  psi: 287.71 },
+      { tC: 36,  psi: 303.21 },{ tC: 38,  psi: 319.32 },{ tC: 40,  psi: 336.02 },{ tC: 42,  psi: 353.37 },
+      { tC: 44,  psi: 371.36 },{ tC: 46,  psi: 390.02 },{ tC: 48,  psi: 409.36 },{ tC: 50,  psi: 429.42 },
+      { tC: 52,  psi: 450.21 },{ tC: 54,  psi: 471.77 },{ tC: 56,  psi: 494.12 },{ tC: 58,  psi: 517.27 },
+      { tC: 60,  psi: 541.30 }
+    ],
+    "R134a": [
+      { tC: -20, psi: 4.56 },  { tC: -18, psi: 6.28 },  { tC: -16, psi: 8.12 },  { tC: -14, psi: 10.08 },
+      { tC: -12, psi: 12.17 }, { tC: -10, psi: 14.40 }, { tC: -8,  psi: 16.77 }, { tC: -6,  psi: 19.28 },
+      { tC: -4,  psi: 21.95 }, { tC: -2,  psi: 24.78 }, { tC: 0,   psi: 27.77 }, { tC: 2,   psi: 30.93 },
+      { tC: 4,   psi: 34.27 }, { tC: 6,   psi: 37.80 }, { tC: 8,   psi: 41.51 }, { tC: 10,  psi: 45.43 },
+      { tC: 12,  psi: 49.55 }, { tC: 14,  psi: 53.88 }, { tC: 16,  psi: 58.43 }, { tC: 18,  psi: 63.20 },
+      { tC: 20,  psi: 68.21 }, { tC: 22,  psi: 73.46 }, { tC: 24,  psi: 78.95 }, { tC: 26,  psi: 84.70 },
+      { tC: 28,  psi: 90.71 }, { tC: 30,  psi: 96.99 }, { tC: 32,  psi: 103.55 },{ tC: 34,  psi: 110.39 },
+      { tC: 36,  psi: 117.53 },{ tC: 38,  psi: 124.97 },{ tC: 40,  psi: 132.72 },{ tC: 42,  psi: 140.78 },
+      { tC: 44,  psi: 149.18 },{ tC: 46,  psi: 157.91 },{ tC: 48,  psi: 166.98 },{ tC: 50,  psi: 176.41 },
+      { tC: 52,  psi: 186.19 },{ tC: 54,  psi: 196.36 }
+    ],
+    "R32": [
+      { tC: -20, psi: 44.2 }, { tC: -18, psi: 48.7 }, { tC: -16, psi: 53.6 }, { tC: -14, psi: 58.7 },
+      { tC: -12, psi: 64.1 }, { tC: -10, psi: 69.8 }, { tC: -8,  psi: 75.8 }, { tC: -6,  psi: 82.1 },
+      { tC: -4,  psi: 88.8 }, { tC: -2,  psi: 95.8 }, { tC: 0,   psi: 103.0 },{ tC: 2,   psi: 111.0 },
+      { tC: 4,   psi: 119.0 },{ tC: 6,   psi: 128.0 },{ tC: 8,   psi: 136.0 },{ tC: 10,  psi: 146.0 },
+      { tC: 12,  psi: 156.0 },{ tC: 14,  psi: 166.0 },{ tC: 16,  psi: 176.0 },{ tC: 18,  psi: 188.0 },
+      { tC: 20,  psi: 199.0 },{ tC: 22,  psi: 211.0 },{ tC: 24,  psi: 224.0 },{ tC: 26,  psi: 237.0 },
+      { tC: 28,  psi: 251.0 },{ tC: 30,  psi: 265.0 },{ tC: 32,  psi: 280.0 },{ tC: 34,  psi: 295.0 },
+      { tC: 36,  psi: 311.0 },{ tC: 38,  psi: 327.0 },{ tC: 40,  psi: 345.0 }
+    ],
+    "R22": [
+      { tC: -20.0, psi: 20.9 }, { tC: -18.9, psi: 22.4 }, { tC: -17.8, psi: 24.0 }, { tC: -16.7, psi: 25.7 },
+      { tC: -15.6, psi: 27.4 }, { tC: -14.4, psi: 29.2 }, { tC: -13.3, psi: 31.0 }, { tC: -12.2, psi: 32.8 },
+      { tC: -11.1, psi: 34.8 }, { tC: -10.0, psi: 36.8 }, { tC: -8.9,  psi: 38.8 }, { tC: -7.8,  psi: 40.9 },
+      { tC: -6.7,  psi: 43.1 }, { tC: -5.6,  psi: 45.3 }, { tC: -4.4,  psi: 47.6 }, { tC: -3.3,  psi: 50.0 },
+      { tC: -2.2,  psi: 52.4 }, { tC: -1.1,  psi: 55.0 }, { tC: 0.0,   psi: 57.5 }, { tC: 1.1,   psi: 60.2 },
+      { tC: 2.2,   psi: 62.9 }, { tC: 3.3,   psi: 65.7 }, { tC: 4.4,   psi: 68.6 }, { tC: 5.6,   psi: 71.5 },
+      { tC: 6.7,   psi: 74.5 }, { tC: 7.2,   psi: 76.1 }, { tC: 7.8,   psi: 77.6 }, { tC: 8.3,   psi: 79.2 },
+      { tC: 8.9,   psi: 80.8 }, { tC: 9.4,   psi: 82.4 }, { tC: 10.0,  psi: 84.1 }, { tC: 10.6,  psi: 85.7 },
+      { tC: 11.1,  psi: 87.4 }, { tC: 11.7,  psi: 89.1 }, { tC: 12.2,  psi: 90.8 }, { tC: 12.8,  psi: 92.6 },
+      { tC: 13.3,  psi: 94.4 }, { tC: 13.9,  psi: 96.1 }, { tC: 14.4,  psi: 98.0 }, { tC: 15.0,  psi: 99.8 },
+      { tC: 15.6,  psi: 101.6 },{ tC: 16.1,  psi: 103.5 },{ tC: 16.7,  psi: 105.4 },{ tC: 17.2,  psi: 107.3 },
+      { tC: 17.8,  psi: 109.3 },{ tC: 18.3,  psi: 111.3 },{ tC: 18.9,  psi: 113.2 },{ tC: 19.4,  psi: 115.3 },
+      { tC: 20.0,  psi: 117.3 },{ tC: 21.1,  psi: 121.4 },{ tC: 22.2,  psi: 125.7 },{ tC: 23.3,  psi: 130.0 },
+      { tC: 24.4,  psi: 134.5 },{ tC: 25.6,  psi: 139.0 },{ tC: 26.7,  psi: 143.6 },{ tC: 27.8,  psi: 148.4 },
+      { tC: 28.9,  psi: 153.2 },{ tC: 30.0,  psi: 158.2 }
+    ]
+  };
+
+  function normalizeTcPsiToPsiTc(ptRaw) {
+    const out = {};
+    for (const gas of Object.keys(ptRaw)) {
+      const arr = Array.isArray(ptRaw[gas]) ? ptRaw[gas] : [];
+      const norm = arr
+        .map(p => {
+          const psi = Number(p.psi);
+          const tC  = Number(p.tC);
+          if (!Number.isFinite(psi) || !Number.isFinite(tC)) return null;
+          return { psi, tC };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.psi - b.psi);
+
+      const dedup = [];
+      for (const p of norm) {
+        if (dedup.length && Math.abs(dedup[dedup.length - 1].psi - p.psi) < 1e-9) {
+          dedup[dedup.length - 1] = p;
+        } else {
+          dedup.push(p);
+        }
+      }
+      out[gas] = dedup;
+    }
+    return out;
+  }
+
+  function satTempFromPsi(points, psi) {
+    if (!points || points.length < 2) return null;
+    const minPsi = points[0].psi;
+    const maxPsi = points[points.length - 1].psi;
+    if (psi < minPsi || psi > maxPsi) return null;
+
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i];
+      const b = points[i + 1];
+      if (psi === a.psi) return a.tC;
+      if (psi > a.psi && psi < b.psi) {
+        const t = (psi - a.psi) / (b.psi - a.psi);
+        return a.tC + t * (b.tC - a.tC);
+      }
+    }
+    return points[points.length - 1].tC;
+  }
+
+  const LIMITS = { conv: { low: 5, high: 12 }, inv: { low: 4, high: 10 } };
+
+  function classify(superheat, tipo) {
+    const L = LIMITS[tipo] || LIMITS.conv;
+    if (superheat < L.low) return { key: "baixo", cls: "warn", diag: [
+      "Possiveis causas: excesso de refrigerante, fluxo de ar baixo no evaporador, capilar/VET alimentando demais.",
+      "Checar: filtro/serpentina, ventilacao, carga e restricoes."
+    ]};
+    if (superheat > L.high) return { key: "alto", cls: "bad", diag: [
+      "Possiveis causas: falta de refrigerante, restricao (capilar/filtro/secador), vazamento, baixa vazao de ar.",
+      "Checar: vazamentos, restricoes, ventilacao e estabilidade de pressao."
+    ]};
+    return { key: "normal", cls: "good", diag: [
+      "Tendencia de operacao estavel.",
+      "Confirme com: sub-resfriamento, corrente do compressor, delta T e ambiente."
+    ]};
+  }
+
+  function fmt(n) {
+    if (n === null || Number.isNaN(n)) return "—";
+    return (Math.round(n * 10) / 10).toFixed(1);
+  }
+
+  // INIT
+  const PT_NORM = normalizeTcPsiToPsiTc(PT_RAW);
+
+  const $gas = document.getElementById("gas");
+  Object.keys(PT_NORM).sort().forEach(g => {
+    const o = document.createElement("option");
+    o.value = g; o.textContent = g;
+    $gas.appendChild(o);
+  });
+
+  // Debug tabelas: só preenche se abrir
+  const $tablesView = document.getElementById("tablesView");
+  const $tablesBox = document.getElementById("tablesBox");
+  const $toggle = document.getElementById("toggleTables");
+  let tablesShown = false;
+
+  $toggle.addEventListener("click", () => {
+    tablesShown = !tablesShown;
+    $tablesBox.classList.toggle("hidden", !tablesShown);
+    $toggle.textContent = tablesShown ? "Ocultar tabelas" : "Mostrar tabelas";
+    if (tablesShown && !$tablesView.textContent) {
+      $tablesView.textContent = JSON.stringify(PT_RAW, null, 2);
+    }
+  });
+
+  const state = { last: null };
+
+  // ==========================================================
+  // CALCULO PRINCIPAL (COM UNIDADE)
+  // ==========================================================
+  function calcNow() {
+    const tipo = document.getElementById("tipo").value;
+    const gas  = $gas.value;
+
+    const pressureInput = parseFloat(document.getElementById("psi").value);
+    const unit = document.getElementById("unit").value;
+
+    const tsuc = parseFloat(document.getElementById("tsuc").value);
+
+    const $tevap  = document.getElementById("tevap");
+    const $sup    = document.getElementById("sup");
+    const $status = document.getElementById("status");
+    const $diag   = document.getElementById("diag");
+
+    if (!Number.isFinite(pressureInput) || !Number.isFinite(tsuc)) {
+      $tevap.textContent = "—";
+      $sup.textContent = "—";
+      $status.textContent = "Preencha pressao e temperatura";
+      $status.className = "pill warn";
+      $diag.textContent = "—";
+      state.last = null;
+      return;
+    }
+
+    // Conversao para PSI
+    let psi;
+    if (unit === "psi") psi = pressureInput;
+    else if (unit === "bar") psi = pressureInput * 14.5038;
+    else if (unit === "kpa") psi = pressureInput * 0.145038;
+    else psi = pressureInput;
+
+    const points = PT_NORM[gas];
+    const tsat = satTempFromPsi(points, psi);
+
+    if (tsat === null) {
+      const minPsi = points?.[0]?.psi;
+      const maxPsi = points?.[points.length - 1]?.psi;
+      $tevap.textContent = "Fora da faixa";
+      $sup.textContent = "—";
+      $status.textContent = "Tabela PT nao cobre essa pressao";
+      $status.className = "pill warn";
+      $diag.textContent = (Number.isFinite(minPsi) && Number.isFinite(maxPsi))
+        ? `A tabela do ${gas} cobre de ${fmt(minPsi)} a ${fmt(maxPsi)} psi.`
+        : "Tabela incompleta para esse gas.";
+      state.last = null;
+      return;
+    }
+
+    const superheat = tsuc - tsat;
+    const c = classify(superheat, tipo);
+
+    $tevap.textContent = fmt(tsat);
+    $sup.textContent = fmt(superheat);
+    $status.textContent = c.key.toUpperCase();
+    $status.className = "pill " + c.cls;
+    $diag.innerHTML = `<ul style="margin:6px 0 0; padding-left:16px;">
+      ${c.diag.map(x => `<li>${x}</li>`).join("")}
+    </ul>`;
+
+    state.last = {
+      at: new Date().toISOString(),
+      brand: document.getElementById("brand").value.trim(),
+      tipo, gas,
+      pressureInput,
+      unit,
+      psi,
+      tsuc,
+      tsat,
+      superheat,
+      obs: document.getElementById("obs").value.trim(),
+      status: c.key
+    };
+  }
+
+  document.getElementById("calc").addEventListener("click", calcNow);
+  document.getElementById("psi").addEventListener("input", calcNow);
+  document.getElementById("unit").addEventListener("change", calcNow);
+  document.getElementById("tsuc").addEventListener("input", calcNow);
+  document.getElementById("gas").addEventListener("change", calcNow);
+  document.getElementById("tipo").addEventListener("change", calcNow);
+
+  // HISTORICO
+  const KEY = "superheat_history_v6";
+
+  function loadHist() {
+    try { return JSON.parse(localStorage.getItem(KEY) || "[]"); }
+    catch { return []; }
+  }
+  function saveHist(items) {
+    localStorage.setItem(KEY, JSON.stringify(items));
+  }
+  function renderHist() {
+    const items = loadHist().slice().reverse();
+    const $h = document.getElementById("history");
+    if (!items.length) {
+      $h.innerHTML = `<div class="muted">Nenhum registro ainda.</div>`;
+      return;
+    }
+    $h.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Equip.</th>
+            <th>Gas</th>
+            <th>Pressao</th>
+            <th>T suc (°C)</th>
+            <th>T sat (°C)</th>
+            <th>Sup (°C)</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(it => {
+            const d = new Date(it.at);
+            const dt = d.toLocaleString("pt-BR");
+            const eq = (it.brand ? it.brand + " / " : "") + (it.tipo === "inv" ? "Inverter" : "Conv.");
+            const rowCls = it.status === "normal" ? "good" : (it.status === "alto" ? "bad" : "warn");
+            const pres = `${fmt(it.pressureInput)} ${it.unit}`;
+            return `<tr class="${rowCls}">
+              <td>${dt}${it.obs ? `<div class="small">${it.obs}</div>` : ""}</td>
+              <td>${eq}</td>
+              <td>${it.gas}</td>
+              <td>${pres}</td>
+              <td>${fmt(it.tsuc)}</td>
+              <td>${fmt(it.tsat)}</td>
+              <td>${fmt(it.superheat)}</td>
+              <td><span class="pill">${String(it.status).toUpperCase()}</span></td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  document.getElementById("save").addEventListener("click", () => {
+    calcNow();
+    if (!state.last) return;
+    const items = loadHist();
+    items.push(state.last);
+    saveHist(items);
+    renderHist();
+  });
+
+  document.getElementById("clear").addEventListener("click", () => {
+    localStorage.removeItem(KEY);
+    renderHist();
+  });
+
+  renderHist();
+</script>
+
+<!-- PWA: registra o service worker -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>
